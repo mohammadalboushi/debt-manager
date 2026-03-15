@@ -675,13 +675,16 @@ function handleAndroidBack() {
       return true;
     }
   }
+  
   const menu = document.getElementById('more-menu');
   if (menu && !menu.classList.contains('hidden')) { closeMoreMenu(); return true; }
-  const customer = document.getElementById('screen-customer');
-  if (customer && customer.classList.contains('active')) { closeCustomer(); return true; }
-  const history = document.getElementById('screen-history');
-  if (history && history.classList.contains('active')) { closeHistory(); return true; }
-  
+
+  const customerScreen = document.getElementById('screen-customer');
+  if (customerScreen && customerScreen.classList.contains('active')) { closeCustomer(); return true; }
+
+  const historyScreen = document.getElementById('screen-history');
+  if (historyScreen && historyScreen.classList.contains('active')) { closeHistory(); return true; }
+
   return false;
 }
 
@@ -698,16 +701,12 @@ function init() {
     }
   });
 
-  // إضافة هاش وهمي #app لضمان استجابة المتصفح
-  history.pushState(null, null, '#app');
+  window.history.replaceState({ page: 'main' }, null, '');
+  window.history.pushState({ page: 'trap' }, null, '');
+
   window.addEventListener('popstate', function(event) {
     if (handleAndroidBack()) {
-      // استخدام setTimeout يمنع المتصفح من تجاهل أمر البقاء وراء الكواليس
-      setTimeout(() => {
-        history.pushState(null, null, '#app');
-      }, 10);
-    } else {
-      history.back();
+      window.history.pushState({ page: 'trap' }, null, '');
     }
   });
 }
