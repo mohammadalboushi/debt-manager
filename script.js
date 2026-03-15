@@ -517,6 +517,7 @@ function saveInvoiceNote() {
 }
 
 function deleteInvoiceFromDetail() {
+  closeInvoiceDetail(); // إغلاق نافذة التفاصيل أولاً لمنع التداخل
   showConfirm('حذف الفاتورة', 'هل تريد حذف هذه الفاتورة؟').then(ok => {
     if (!ok) return;
     const customer = db.customers.find(c => c.id === currentCustomerId);
@@ -524,7 +525,6 @@ function deleteInvoiceFromDetail() {
     customer.invoices = customer.invoices.filter(i => i.id !== currentInvoiceId);
     saveData();
     renderInvoices();
-    closeInvoiceDetail();
   });
 }
 
@@ -716,6 +716,18 @@ function init() {
     const btnMore = document.getElementById('btn-more');
     if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !btnMore.contains(e.target)) {
       closeMoreMenu();
+    }
+
+    // الكود الجديد: إغلاق النوافذ المنبثقة عند الضغط على الخلفية (المكان الفارغ)
+    if (e.target.classList.contains('modal-overlay')) {
+      const id = e.target.id;
+      if (id === 'modal-confirm') closeConfirm(false);
+      else if (id === 'modal-prompt') closePrompt(null);
+      else if (id === 'modal-alert') closeAlert();
+      else if (id === 'modal-invoice-detail') closeInvoiceDetail();
+      else if (id === 'modal-exchange') closeExchangeModal(false);
+      else if (id === 'modal-select-customer') closeSelectCustomerModal();
+      else if (id === 'modal-sort') hideModal('modal-sort');
     }
   });
 
