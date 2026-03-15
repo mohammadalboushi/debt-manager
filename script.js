@@ -701,12 +701,16 @@ function init() {
     }
   });
 
+  // زراعة المصيدة لأول مرة
   window.history.replaceState({ page: 'main' }, null, '');
   window.history.pushState({ page: 'trap' }, null, '');
 
   window.addEventListener('popstate', function(event) {
     if (handleAndroidBack()) {
-      window.history.pushState({ page: 'trap' }, null, '');
+      // استخدام مهلة زمنية صغيرة جداً (50 ملي ثانية) لخداع حماية متصفح الجوال
+      setTimeout(function() {
+        window.history.pushState({ page: 'trap' }, null, '');
+      }, 50);
     }
   });
 }
