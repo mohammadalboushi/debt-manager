@@ -32,6 +32,7 @@ let pendingCurrency = null;
 let currentSort = 'newest';
 let historySearchTerm = '';
 let currentUser = null;
+let unsubscribeNotes = null;
 
 // ===== فايربيز وتخزين السحابة =====
 
@@ -48,13 +49,20 @@ auth.onAuthStateChanged(user => {
     authIcon.classList.add('hidden');
     userPic.src = user.photoURL || '';
     userPic.classList.remove('hidden');
-    loadDataFromCloud();
+    
+    // المزامنة اللحظية (متل ملاحظاتي الذكية)
+    setupRealtimeListener(user.uid);
   } else {
     dot.className = 'status-dot red';
     authText.textContent = 'تسجيل الدخول لجوجل';
     authIcon.classList.remove('hidden');
     userPic.classList.add('hidden');
-    // تصفير البيانات عند تسجيل الخروج
+    
+    if (unsubscribeNotes) {
+        unsubscribeNotes();
+        unsubscribeNotes = null;
+    }
+    
     db = { customers: [], exchangeRate: 89000 };
     updateRateDisplay();
     if (document.getElementById('screen-history').classList.contains('active')) {
@@ -77,46 +85,52 @@ function toggleAuth() {
   }
 }
 
-function loadDataFromCloud() {
-  if (!currentUser) return;
-  firestore.collection('users').doc(currentUser.uid).get().then(doc => {
-    if (doc.exists) {
-      db = doc.data();
-      if (!db.customers) db.customers = [];
-      if (!db.exchangeRate) db.exchangeRate = 89000;
+function setupRealtimeListener(uid) {
+  unsubscribeNotes = firestore.collection('users').doc(uid).onSnapshot(docSnap => {
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      if(data.customers) db.customers = data.customers;
+      if(data.exchangeRate) db.exchangeRate = data.exchangeRate;
     } else {
-      saveDataToCloud(); // إنشاء مستند فارغ
+      saveDataToCloud(); 
     }
     updateRateDisplay();
     if (document.getElementById('screen-history').classList.contains('active')) {
       renderCustomersList();
     }
-  }).catch(error => {
-    showAlert('خطأ', 'فشل تحميل البيانات من السحابة', '❌');
+  }, error => {
+    showAlert('خطأ المزامنة', error.message, '❌');
   });
 }
 
 function saveDataToCloud() {
-  if (!currentUser) {
-    showAlert('تنبيه', 'يجب تسجيل الدخول لحفظ البيانات في السحابة', '⚠️');
-    return;
-  }
+  if (!currentUser) return;
   firestore.collection('users').doc(currentUser.uid).set(db).catch(error => {
-    showAlert('خطأ', 'فشل حفظ البيانات: ' + error.message, '❌');
+    showAlert('خطأ بالحفظ', error.message, '❌');
   });
 }
 
-// دالة بديلة للتوافق مع الكود القديم
 function saveData() {
   saveDataToCloud();
 }
 
 
 // ===== الأرقام والتنسيق =====
+function adjustFontSize(elementId) {
+  const el = document.getElementById(elementId);
+  let fontSize = 26;
+  el.style.fontSize = fontSize + 'px';
+  while (el.scrollWidth > el.clientWidth && fontSize > 12) {
+    fontSize--;
+    el.style.fontSize = fontSize + 'px';
+  }
+}
+
 function formatNum(n) {
-  if (Math.abs(n) >= 1000) return n.toLocaleString('en-US'); // تغيير إلى التنسيق الأجنبي
+  if (Math.abs(n) >= 1000) return n.toLocaleString('en-US');
   return n.toString();
 }
+
 function formatAmount(amount, currency) {
   const n = parseFloat(amount) || 0;
   if (currency === 'usd') return `$${formatNum(n)}`;
@@ -158,16 +172,6 @@ function setActiveCurrency(cur) {
   document.getElementById('box-usd').classList.toggle('active', cur === 'usd');
   inputValue = '0';
   updateDisplays();
-}
-
-function adjustFontSize(elementId) {
-  const el = document.getElementById(elementId);
-  let fontSize = 26;
-  el.style.fontSize = fontSize + 'px';
-  while (el.scrollWidth > el.clientWidth && fontSize > 12) {
-    fontSize--;
-    el.style.fontSize = fontSize + 'px';
-  }
 }
 
 function updateDisplays() {
@@ -251,7 +255,6 @@ function addInvoice(customerId, amount, currency) {
   if (!customer) return;
   const now = new Date();
   
-  // تنسيق التاريخ الأجنبي كأرقام
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = now.getFullYear();

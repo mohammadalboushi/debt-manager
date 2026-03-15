@@ -7,9 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -56,7 +57,7 @@
 
     <div class="amount-section">
       <div class="amount-display-wrapper">
-        <div class="amount-box active" id="box-lbp" onclick="setActiveCurrency('lbp')">
+        <div class="amount-box" id="box-lbp" onclick="setActiveCurrency('lbp')">
           <div class="amount-label">
             <span class="currency-flag">🇱🇧</span>
             <span>ليرة لبنانية</span>
@@ -67,7 +68,7 @@
         <div class="exchange-arrow">
           <svg viewBox="0 0 24 24"><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/></svg>
         </div>
-        <div class="amount-box" id="box-usd" onclick="setActiveCurrency('usd')">
+        <div class="amount-box active" id="box-usd" onclick="setActiveCurrency('usd')">
           <div class="amount-label">
             <span class="currency-flag">🇺🇸</span>
             <span>دولار أمريكي</span>
@@ -283,5 +284,13 @@
   <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
 
   <script src="script.js"></script>
+  <link rel="manifest" href="manifest.json">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js');
+      });
+    }
+  </script>
 </body>
 </html>
