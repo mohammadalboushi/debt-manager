@@ -435,11 +435,10 @@ function openCustomer(id) {
   document.getElementById('customer-name-header').textContent = customer.name;
   renderInvoices();
   showScreen('screen-customer');
+  // إضافة حالة جديدة للتاريخ عند فتح شاشة الزبون لضمان تسلسل الرجوع
+  history.pushState({screen: 'customer'}, null, location.href);
 }
-function closeCustomer() {
-  showScreen('screen-history');
-  renderCustomersList();
-}
+
 
 function renderInvoices() {
   const customer = db.customers.find(c => c.id === currentCustomerId);
@@ -533,13 +532,19 @@ function openExchangeRate() {
 function closeExchangeModal(save) {
   if (save) {
     const val = parseFloat(document.getElementById('exchange-input').value);
-    if (!val || val <= 0) { showAlert('خطأ', 'الرجاء إدخال سعر صرف صحيح', '❌'); return; }
+    if (!val || val <= 0) { 
+      showAlert('خطأ', 'الرجاء إدخال سعر صرف صحيح', '❌'); 
+      return; 
+    }
     db.exchangeRate = val;
     saveData();
     updateRateDisplay();
+    showAlert('تم التعديل', 'تم تغيير سعر الصرف بنجاح', '✅');
   }
+  // إخفاء النافذة فوراً سواء تم الحفظ أو الإلغاء
   hideModal('modal-exchange');
 }
+
 
 // ===== تصدير/استيراد =====
 function exportData() {
@@ -655,6 +660,7 @@ function closePrompt(result) {
 }
 
 function handleAndroidBack() {
+  // 1. التعامل مع النوافذ المنبثقة (Modals)
   const modals = ['modal-sort', 'modal-invoice-detail', 'modal-select-customer', 'modal-exchange', 'modal-prompt', 'modal-confirm', 'modal-alert'];
   for (const id of modals) {
     const el = document.getElementById(id);
@@ -669,15 +675,35 @@ function handleAndroidBack() {
       return true;
     }
   }
+
+  // 2. القائمة الجانبية
   const menu = document.getElementById('more-menu');
-  if (menu && !menu.classList.contains('hidden')) { closeMoreMenu(); return true; }
+  if (menu && !menu.classList.contains('hidden')) { 
+    closeMoreMenu(); 
+    return true; 
+  }
+
+  // 3. شاشة تفاصيل الزبون (يرجع للمحفوظات)
   const customer = document.getElementById('screen-customer');
-  if (customer && customer.classList.contains('active')) { closeCustomer(); return true; }
-  const history = document.getElementById('screen-history');
-  if (history && history.classList.contains('active')) { closeHistory(); return true; }
+  if (customer && customer.classList.contains('active')) {
+    closeCustomer();
+    // إجبار المتصفح على البقاء في الموقع وتحديث الحالة
+    history.replaceState({screen: 'history'}, null, location.href);
+    return true;
+  }
+
+  // 4. شاشة المحفوظات (يرجع للرئيسية)
+  const historyScreen = document.getElementById('screen-history');
+  if (historyScreen && historyScreen.classList.contains('active')) {
+    closeHistory();
+    // إجبار المتصفح على البقاء في الموقع وتحديث الحالة للرئيسية
+    history.replaceState({screen: 'main'}, null, location.href);
+    return true;
+  }
   
   return false;
 }
+
 
 function init() {
   updateDisplays();
