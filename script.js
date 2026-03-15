@@ -33,6 +33,7 @@ let currentSort = 'newest';
 let historySearchTerm = '';
 let currentUser = null;
 let unsubscribeNotes = null;
+let isBackAction = false; // متغير عالمي لمعرفة حالة الرجوع
 
 // ===== فايربيز وتخزين السحابة =====
 
@@ -600,6 +601,10 @@ function clearAllData() {
 function toggleMoreMenu() {
   const menu = document.getElementById('more-menu');
   menu.classList.toggle('hidden');
+  if (!menu.classList.contains('hidden') && !isBackAction) {
+      window.history.pushState({ menu: true }, null, '');
+  }
+  isBackAction = false;
 }
 function closeMoreMenu() {
   document.getElementById('more-menu').classList.add('hidden');
@@ -609,6 +614,11 @@ function closeMoreMenu() {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  
+  if (!isBackAction && id !== 'screen-main') {
+      window.history.pushState({ screen: id }, null, '');
+  }
+  isBackAction = false;
 }
 
 // ===== النوافذ المنبثقة =====
@@ -616,6 +626,11 @@ function showModal(id) {
   const el = document.getElementById(id);
   el.classList.remove('hidden');
   el.style.display = 'flex';
+  
+  if (!isBackAction) {
+      window.history.pushState({ modal: id }, null, '');
+  }
+  isBackAction = false;
 }
 function hideModal(id) {
   const el = document.getElementById(id);
@@ -661,6 +676,8 @@ function closePrompt(result) {
 }
 
 function handleAndroidBack() {
+  isBackAction = true;
+
   const modals = ['modal-sort', 'modal-invoice-detail', 'modal-select-customer', 'modal-exchange', 'modal-prompt', 'modal-confirm', 'modal-alert'];
   for (const id of modals) {
     const el = document.getElementById(id);
@@ -685,6 +702,7 @@ function handleAndroidBack() {
   const historyScreen = document.getElementById('screen-history');
   if (historyScreen && historyScreen.classList.contains('active')) { closeHistory(); return true; }
 
+  isBackAction = false;
   return false;
 }
 
@@ -701,17 +719,8 @@ function init() {
     }
   });
 
-  // زراعة المصيدة لأول مرة
-  window.history.replaceState({ page: 'main' }, null, '');
-  window.history.pushState({ page: 'trap' }, null, '');
-
   window.addEventListener('popstate', function(event) {
-    if (handleAndroidBack()) {
-      // استخدام مهلة زمنية صغيرة جداً (50 ملي ثانية) لخداع حماية متصفح الجوال
-      setTimeout(function() {
-        window.history.pushState({ page: 'trap' }, null, '');
-      }, 50);
-    }
+    handleAndroidBack();
   });
 }
 
