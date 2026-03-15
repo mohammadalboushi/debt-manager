@@ -1,4 +1,4 @@
-const CACHE_NAME = 'debt-v1';
+const CACHE_NAME = 'debt-v2';
 const urlsToCache = [
   'index.html',
   'style.css',
