@@ -14,8 +14,8 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const firestore = firebase.firestore();
 
-// المتغيرات الأساسية
-let db = {
+// المتغيرات الأساسية (نجلبها من الذاكرة المحلية أولاً ليعمل التطبيق أوفلاين)
+let db = JSON.parse(localStorage.getItem('debt_manager_db')) || {
   customers: [],
   exchangeRate: 89000
 };
@@ -35,7 +35,7 @@ let currentUser = null;
 let unsubscribeNotes = null;
 let isBackAction = false; // متغير عالمي لمعرفة حالة الرجوع
 
-// ===== فايربيز وتخزين السحابة =====
+// ===== فايربيز والمزامنة السحابية =====
 
 auth.onAuthStateChanged(user => {
   currentUser = user;
@@ -51,8 +51,8 @@ auth.onAuthStateChanged(user => {
     userPic.src = user.photoURL || '';
     userPic.classList.remove('hidden');
     
-    // المزامنة اللحظية (متل ملاحظاتي الذكية)
-    setupRealtimeListener(user.uid);
+    // عند تسجيل الدخول: نقوم بدمج البيانات المحلية مع السحابية أولاً
+    syncOnceThenListen(user.uid);
   } else {
     dot.className = 'status-dot red';
     authText.textContent = 'تسجيل الدخول لجوجل';
@@ -64,7 +64,8 @@ auth.onAuthStateChanged(user => {
         unsubscribeNotes = null;
     }
     
-    db = { customers: [], exchangeRate: 89000 };
+    // عند تسجيل الخروج: نحافظ على البيانات في الذاكرة المحلية ليكمل المستخدم أوفلاين
+    db = JSON.parse(localStorage.getItem('debt_manager_db')) || { customers: [], exchangeRate: 89000 };
     updateRateDisplay();
     if (document.getElementById('screen-history').classList.contains('active')) {
       renderCustomersList();
@@ -76,7 +77,7 @@ function toggleAuth() {
   closeMoreMenu();
   if (currentUser) {
     auth.signOut().then(() => {
-      showAlert('تمت العملية', 'تم تسجيل الخروج بنجاح', '✅');
+      showAlert('تمت العملية', 'تم تسجيل الخروج بنجاح. بياناتك ستبقى محفوظة على جهازك.', '✅');
     });
   } else {
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -86,33 +87,78 @@ function toggleAuth() {
   }
 }
 
+// دالة ذكية لدمج بيانات الأوفلاين مع السحابة بدون فقدان أي شيء
+function mergeLocalAndCloud(cloudData) {
+  let localData = JSON.parse(localStorage.getItem('debt_manager_db'));
+  if (!localData || !localData.customers || localData.customers.length === 0) {
+      return cloudData || { customers: [], exchangeRate: 89000 };
+  }
+  if (!cloudData || !cloudData.customers) {
+      return localData;
+  }
+
+  let mergedCustomers = [...cloudData.customers];
+  localData.customers.forEach(localCust => {
+      let existing = mergedCustomers.find(c => c.id === localCust.id);
+      if (existing) {
+          localCust.invoices.forEach(inv => {
+              if (!existing.invoices.find(i => i.id === inv.id)) {
+                  existing.invoices.push(inv);
+              }
+          });
+          existing.invoices.sort((a,b) => b.timestamp - a.timestamp); // ترتيب الفواتير
+      } else {
+          mergedCustomers.push(localCust);
+      }
+  });
+  
+  return {
+      customers: mergedCustomers,
+      exchangeRate: localData.exchangeRate || cloudData.exchangeRate || 89000
+  };
+}
+
+function syncOnceThenListen(uid) {
+  const userRef = firestore.collection('users').doc(uid);
+  userRef.get().then(doc => {
+      let cloudData = doc.exists ? doc.data() : null;
+      db = mergeLocalAndCloud(cloudData);
+      saveData(); // نحفظ الدمج في السحابة والجهاز
+      setupRealtimeListener(uid); // ثم نبدأ الاستماع للتغيرات
+  }).catch(err => {
+      setupRealtimeListener(uid); // كبديل في حال الخطأ
+  });
+}
+
 function setupRealtimeListener(uid) {
   unsubscribeNotes = firestore.collection('users').doc(uid).onSnapshot(docSnap => {
     if (docSnap.exists) {
       const data = docSnap.data();
       if(data.customers) db.customers = data.customers;
       if(data.exchangeRate) db.exchangeRate = data.exchangeRate;
-    } else {
-      saveDataToCloud(); 
+      
+      // نحفظ البيانات السحابية الجديدة في الجهاز لتكون متاحة أوفلاين
+      localStorage.setItem('debt_manager_db', JSON.stringify(db));
     }
     updateRateDisplay();
     if (document.getElementById('screen-history').classList.contains('active')) {
       renderCustomersList();
     }
   }, error => {
-    showAlert('خطأ المزامنة', error.message, '❌');
-  });
-}
-
-function saveDataToCloud() {
-  if (!currentUser) return;
-  firestore.collection('users').doc(currentUser.uid).set(db).catch(error => {
-    showAlert('خطأ بالحفظ', error.message, '❌');
+    console.error('خطأ المزامنة:', error.message);
   });
 }
 
 function saveData() {
-  saveDataToCloud();
+  // 1. الحفظ الداخلي (دائماً يعمل سواء في نت أو لا)
+  localStorage.setItem('debt_manager_db', JSON.stringify(db));
+  
+  // 2. الرفع السحابي (يعمل بالخلفية فقط إذا كان مسجل دخول)
+  if (currentUser) {
+    firestore.collection('users').doc(currentUser.uid).set(db).catch(error => {
+      console.error('تم الحفظ محلياً، بانتظار الاتصال للرفع:', error.message);
+    });
+  }
 }
 
 
@@ -190,7 +236,7 @@ function updateDisplays() {
 
 function updateRateDisplay() {
   const rateEl = document.getElementById('rate-value');
-  if (rateEl) { // التأكد من وجود العنصر قبل محاولة تغييره لتجنب توقف الكود
+  if (rateEl) {
     rateEl.textContent = formatNum(db.exchangeRate);
   }
   updateDisplays();
@@ -198,7 +244,6 @@ function updateRateDisplay() {
 
 // ===== تأكيد العملية =====
 function confirmAmount() {
-  if (!currentUser) { showAlert('تنبيه', 'يجب تسجيل الدخول أولاً', '⚠️'); return; }
   const val = parseFloat(inputValue);
   if (!val || val === 0) { showAlert('تنبيه', 'الرجاء إدخال مبلغ صحيح', '⚠️'); return; }
   pendingAmount = val;
@@ -407,7 +452,6 @@ function toggleSelectCustomer(id) {
 }
 
 function addNewCustomer() {
-  if (!currentUser) { showAlert('تنبيه', 'يجب تسجيل الدخول أولاً', '⚠️'); return; }
   showPrompt('زبون جديد', 'أدخل اسم الزبون').then(name => {
     if (!name || !name.trim()) return;
     name = name.trim();
@@ -517,7 +561,7 @@ function saveInvoiceNote() {
 }
 
 function deleteInvoiceFromDetail() {
-  closeInvoiceDetail(); // إغلاق نافذة التفاصيل أولاً لمنع التداخل
+  closeInvoiceDetail();
   showConfirm('حذف الفاتورة', 'هل تريد حذف هذه الفاتورة؟').then(ok => {
     if (!ok) return;
     const customer = db.customers.find(c => c.id === currentCustomerId);
@@ -541,8 +585,8 @@ function closeExchangeModal(save) {
     db.exchangeRate = val;
     saveData();
     updateRateDisplay();
-    hideModal('modal-exchange'); // إغلاق النافذة أولاً
-    showAlert('تم', 'تم تغيير سعر الصرف بنجاح', '✅'); // ثم إظهار رسالة النجاح
+    hideModal('modal-exchange'); 
+    showAlert('تم', 'تم تغيير سعر الصرف بنجاح', '✅'); 
     return;
   }
   hideModal('modal-exchange');
@@ -718,7 +762,6 @@ function init() {
       closeMoreMenu();
     }
 
-    // الكود الجديد: إغلاق النوافذ المنبثقة عند الضغط على الخلفية (المكان الفارغ)
     if (e.target.classList.contains('modal-overlay')) {
       const id = e.target.id;
       if (id === 'modal-confirm') closeConfirm(false);
