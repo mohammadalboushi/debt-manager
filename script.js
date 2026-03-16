@@ -14,7 +14,12 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const firestore = firebase.firestore();
 
-// المتغيرات الأساسية (نجلبها من الذاكرة المحلية أولاً ليعمل التطبيق أوفلاين)
+// تفعيل ميزة الأوفلاين السحابي
+firestore.enablePersistence().catch(function(err) {
+    console.log("Offline error: ", err.code);
+});
+
+// المتغيرات الأساسية (نجلبها من الذاكرة المحلية أولاً ليعمل التطبيق كزائر)
 let db = JSON.parse(localStorage.getItem('debt_manager_db')) || {
   customers: [],
   exchangeRate: 89000
@@ -33,7 +38,7 @@ let currentSort = 'newest';
 let historySearchTerm = '';
 let currentUser = null;
 let unsubscribeNotes = null;
-let isBackAction = false; // متغير عالمي لمعرفة حالة الرجوع
+let isBackAction = false; 
 
 // ===== فايربيز والمزامنة السحابية =====
 
@@ -51,7 +56,6 @@ auth.onAuthStateChanged(user => {
     userPic.src = user.photoURL || '';
     userPic.classList.remove('hidden');
     
-    // عند تسجيل الدخول: نقوم بدمج البيانات المحلية مع السحابية أولاً
     syncOnceThenListen(user.uid);
   } else {
     dot.className = 'status-dot red';
@@ -64,20 +68,28 @@ auth.onAuthStateChanged(user => {
         unsubscribeNotes = null;
     }
     
-    // عند تسجيل الخروج: نحافظ على البيانات في الذاكرة المحلية ليكمل المستخدم أوفلاين
-    db = JSON.parse(localStorage.getItem('debt_manager_db')) || { customers: [], exchangeRate: 89000 };
+    db = JSON.parse(localStorage.getItem('debt_manager_db')) || { customers: [], exchangeRate: db.exchangeRate || 89000 };
     updateRateDisplay();
-    if (document.getElementById('screen-history').classList.contains('active')) {
-      renderCustomersList();
-    }
+    renderCustomersList();
+    if(currentCustomerId) renderInvoices();
   }
 });
 
 function toggleAuth() {
   closeMoreMenu();
   if (currentUser) {
-    auth.signOut().then(() => {
-      showAlert('تمت العملية', 'تم تسجيل الخروج بنجاح. بياناتك ستبقى محفوظة على جهازك.', '✅');
+    showConfirm('تسجيل الخروج', 'هل تريد تسجيل الخروج؟ سيتم مسح البيانات من الشاشة لحمايتها.').then(ok => {
+        if(!ok) return;
+        auth.signOut().then(() => {
+            localStorage.removeItem('debt_manager_db');
+            db = { customers: [], exchangeRate: 89000 };
+            inputValue = '0';
+            currentCustomerId = null;
+            updateDisplays();
+            renderCustomersList();
+            showScreen('screen-main');
+            showAlert('تم', 'تم تسجيل الخروج وتأمين بياناتك.', '✅');
+        });
     });
   } else {
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -87,7 +99,6 @@ function toggleAuth() {
   }
 }
 
-// دالة ذكية لدمج بيانات الأوفلاين مع السحابة بدون فقدان أي شيء
 function mergeLocalAndCloud(cloudData) {
   let localData = JSON.parse(localStorage.getItem('debt_manager_db'));
   if (!localData || !localData.customers || localData.customers.length === 0) {
@@ -99,18 +110,20 @@ function mergeLocalAndCloud(cloudData) {
 
   let mergedCustomers = [...cloudData.customers];
   localData.customers.forEach(localCust => {
-      let existing = mergedCustomers.find(c => c.id === localCust.id);
+      let existing = mergedCustomers.find(c => c.name === localCust.name);
       if (existing) {
           localCust.invoices.forEach(inv => {
               if (!existing.invoices.find(i => i.id === inv.id)) {
                   existing.invoices.push(inv);
               }
           });
-          existing.invoices.sort((a,b) => b.timestamp - a.timestamp); // ترتيب الفواتير
+          existing.invoices.sort((a,b) => b.timestamp - a.timestamp); 
       } else {
           mergedCustomers.push(localCust);
       }
   });
+  
+  localStorage.removeItem('debt_manager_db');
   
   return {
       customers: mergedCustomers,
@@ -123,10 +136,10 @@ function syncOnceThenListen(uid) {
   userRef.get().then(doc => {
       let cloudData = doc.exists ? doc.data() : null;
       db = mergeLocalAndCloud(cloudData);
-      saveData(); // نحفظ الدمج في السحابة والجهاز
-      setupRealtimeListener(uid); // ثم نبدأ الاستماع للتغيرات
+      saveData(); 
+      setupRealtimeListener(uid); 
   }).catch(err => {
-      setupRealtimeListener(uid); // كبديل في حال الخطأ
+      setupRealtimeListener(uid); 
   });
 }
 
@@ -136,28 +149,26 @@ function setupRealtimeListener(uid) {
       const data = docSnap.data();
       if(data.customers) db.customers = data.customers;
       if(data.exchangeRate) db.exchangeRate = data.exchangeRate;
-      
-      // نحفظ البيانات السحابية الجديدة في الجهاز لتكون متاحة أوفلاين
-      localStorage.setItem('debt_manager_db', JSON.stringify(db));
     }
     updateRateDisplay();
     if (document.getElementById('screen-history').classList.contains('active')) {
       renderCustomersList();
     }
+    if (document.getElementById('screen-customer').classList.contains('active')) {
+      renderInvoices();
+    }
   }, error => {
-    console.error('خطأ المزامنة:', error.message);
+    console.error('Sync Error:', error.message);
   });
 }
 
 function saveData() {
-  // 1. الحفظ الداخلي (دائماً يعمل سواء في نت أو لا)
-  localStorage.setItem('debt_manager_db', JSON.stringify(db));
-  
-  // 2. الرفع السحابي (يعمل بالخلفية فقط إذا كان مسجل دخول)
   if (currentUser) {
     firestore.collection('users').doc(currentUser.uid).set(db).catch(error => {
-      console.error('تم الحفظ محلياً، بانتظار الاتصال للرفع:', error.message);
+      console.error('Error saving to cloud:', error.message);
     });
+  } else {
+    localStorage.setItem('debt_manager_db', JSON.stringify(db));
   }
 }
 
